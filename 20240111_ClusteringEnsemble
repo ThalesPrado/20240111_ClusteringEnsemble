@@ -1,0 +1,269 @@
+# Upload de um arquivo do seu computador local
+uploaded = files.upload()
+
+# Base de dados trazida ao ambiente collab
+df = pd.read_excel("Base_Missão_S.xlsx")
+print(df)
+
+# Listar de arquivos carregados
+for filename in uploaded.keys():
+    print(f'Arquivo carregado: {filename}')
+
+# Nome do arquivo carregado
+arquivo_excel = 'Base_Missão_S.xlsx'
+
+# Listar todas as abas
+abas = pd.ExcelFile(arquivo_excel).sheet_names
+print(abas)
+
+# Ler as abas
+base_transacional = pd.read_excel(arquivo_excel, sheet_name='Base Transacional')
+base_cac = pd.read_excel(arquivo_excel, sheet_name='Base CAC')
+
+# Verificar as primeiras linhas para entender as colunas
+print(base_transacional.head())
+print(base_cac.head())
+
+# Realizar o join pela coluna 'ID'
+merged_base = pd.merge(base_transacional, base_cac[['ID', 'CAC (R$)']], on='ID', how='left')
+
+# Verificar o resultado do merge
+print(merged_base.head(10))
+
+# Configurando para que as tabelas sejam exibidas com mais colunas se necessário
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+
+# Exibir a tabela
+merged_base.head(10)
+
+# Verificar os tipos de dados
+print(merged_base.dtypes)
+
+# Verificar se há valores nulos
+print(merged_base.isnull().sum())
+
+# Verificar se existem valores Na
+tem_nan = merged_base.isna().any().any()  # Retorna True se houver pelo menos um Na
+print(f"\nExistem valores NaN no DataFrame? {tem_nan}")
+
+# Novo data frame merged
+df_novo = merged_base.dropna()
+print(df_novo.head(10))
+
+
+# Agrupar por segmento e id_cliente, somando todas as variáveis numéricas
+resumo = merged_base.groupby(['ID', 'Segmento'], as_index=False).agg({'Volume transacional (R$)': 'sum', 'Receita Transacional (R$)': 'sum',
+                                                                      'Receita Antecipação de recebíveis (R$)': 'sum',
+                                                                      'CAC (R$)_x': 'sum'})
+
+# Exibir o DataFrame resumido
+print("\nDataFrame agrupado por segmento e id_cliente, com somas:")
+print(resumo.head(10))
+
+df_merged = resumo
+
+
+import pandas as pd
+from sklearn.preprocessing import RobustScaler
+from sklearn.cluster import DBSCAN, KMeans, AgglomerativeClustering
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+import matplotlib.pyplot as plt
+
+# Carregar e normalizar os dados
+file_path = '/mnt/data/Base_Missão_S.xlsx'
+df = df_merged
+features = df[['Volume transacional (R$)', 'Receita Transacional (R$)', 'CAC (R$)_x']]
+scaler = RobustScaler()
+features_scaled = scaler.fit_transform(features)
+
+# Função para calcular métricas de avaliação
+def evaluate_clustering(labels, data):
+    silhouette = silhouette_score(data, labels) if len(set(labels)) > 1 else None
+    calinski_harabasz = calinski_harabasz_score(data, labels) if len(set(labels)) > 1 else None
+    davies_bouldin = davies_bouldin_score(data, labels) if len(set(labels)) > 1 else None
+    return silhouette, calinski_harabasz, davies_bouldin
+
+# Dicionário para armazenar resultados
+results = {}
+
+# Aplicar e avaliar modelos
+# DBSCAN
+dbscan1 = DBSCAN(eps=0.5, min_samples=5)
+dbscan1_labels = dbscan1.fit_predict(features_scaled)
+results['DBSCAN1'] = evaluate_clustering(dbscan1_labels, features_scaled)
+df['DBSCAN1 Cluster'] = dbscan1_labels
+
+dbscan2 = DBSCAN(eps=0.3, min_samples=10)
+dbscan2_labels = dbscan2.fit_predict(features_scaled)
+results['DBSCAN2'] = evaluate_clustering(dbscan2_labels, features_scaled)
+df['DBSCAN2 Cluster'] = dbscan2_labels
+
+# KMedias
+kmeans1 = KMeans(n_clusters=3, random_state=0)
+kmeans1_labels = kmeans1.fit_predict(features_scaled)
+results['KMeans1'] = evaluate_clustering(kmeans1_labels, features_scaled)
+df['KMeans1 Cluster'] = kmeans1_labels
+
+kmeans2 = KMeans(n_clusters=4, random_state=0)
+kmeans2_labels = kmeans2.fit_predict(features_scaled)
+results['KMeans2'] = evaluate_clustering(kmeans2_labels, features_scaled)
+df['KMeans2 Cluster'] = kmeans2_labels
+
+# Cluster aglomerativo
+hierarchical1 = AgglomerativeClustering(n_clusters=3)
+hierarchical1_labels = hierarchical1.fit_predict(features_scaled)
+results['Hierarchical1'] = evaluate_clustering(hierarchical1_labels, features_scaled)
+df['Hierarchical1 Cluster'] = hierarchical1_labels
+
+hierarchical2 = AgglomerativeClustering(n_clusters=4)
+hierarchical2_labels = hierarchical2.fit_predict(features_scaled)
+results['Hierarchical2'] = evaluate_clustering(hierarchical2_labels, features_scaled)
+df['Hierarchical2 Cluster'] = hierarchical2_labels
+
+# Análise do Cotovelo para KMeans
+wcss = []
+k_values = range(1, 11)  # Analisar de 1 a 10 clusters para o KMeans
+for k in k_values:
+    kmeans = KMeans(n_clusters=k, random_state=0)
+    kmeans.fit(features_scaled)
+    wcss.append(kmeans.inertia_)  # Inércia (Soma dos Erros Quadrados)
+
+# Plot do método do cotovelo
+plt.figure(figsize=(10, 6))
+plt.plot(k_values, wcss, marker='o')
+plt.title('Método do Cotovelo para Determinar o Número de Clusters em KMeans')
+plt.xlabel('Número de Clusters (K)')
+plt.ylabel('Soma dos Erros Quadrados (WCSS)')
+plt.show()
+
+# Converter dados em data.frame
+metrics_df = pd.DataFrame(results, index=['Silhouette Score', 'Calinski-Harabasz Index', 'Davies-Bouldin Index']).T
+metrics_df
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Configurar o tamanho da figura para visualizações
+plt.figure(figsize=(20, 30))
+
+# Dicionário para labels e títulos de clusters
+model_labels = {
+    'DBSCAN1 Cluster': 'DBSCAN (eps=0.5, min_samples=5)',
+    'DBSCAN2 Cluster': 'DBSCAN (eps=0.3, min_samples=10)',
+    'KMeans1 Cluster': 'KMeans (3 clusters)',
+    'KMeans2 Cluster': 'KMeans (4 clusters)',
+    'Hierarchical1 Cluster': 'Agglomerative (3 clusters)',
+    'Hierarchical2 Cluster': 'Agglomerative (4 clusters)'
+}
+
+# Plotar cada modelo
+for i, (cluster_col, title) in enumerate(model_labels.items(), start=1):
+    plt.subplot(6, 2, i * 2 - 1)
+    sns.scatterplot(data=df, x='Volume transacional (R$)', y='Receita Transacional (R$)',
+                    hue=cluster_col, palette='viridis', s=60, alpha=0.7)
+    plt.title(f'{title} - Volume vs Receita')
+    plt.xlabel('Volume Transacional (R$)')
+    plt.ylabel('Receita Transacional (R$)')
+    plt.legend(title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    plt.subplot(6, 2, i * 2)
+    sns.scatterplot(data=df, x='Receita Transacional (R$)', y='CAC (R$)_x',
+                    hue=cluster_col, palette='viridis', s=60, alpha=0.7)
+    plt.title(f'{title} - Receita vs CAC')
+    plt.xlabel('Receita Transacional (R$)')
+    plt.ylabel('CAC (R$)')
+    plt.legend(title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+plt.tight_layout()
+plt.show()
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Usando o modelo KMeans2 Cluster como exemplo 
+cluster_column = 'KMeans2 Cluster'
+
+# Total de Clientes por Cluster e Segmento
+plt.figure(figsize=(12, 8))
+cluster_counts = df.groupby(['Segmento', cluster_column]).size().unstack().fillna(0)
+cluster_counts.plot(kind='bar', stacked=True, ax=plt.gca())
+plt.title('Total de Clientes por Cluster e Segmento')
+plt.xlabel('Segmento')
+plt.ylabel('Número de Clientes')
+plt.legend(title='Cluster')
+plt.tight_layout()
+plt.show()
+
+# Média e Mediana de Volume e CAC por Cluster e Segmento
+mean_metrics = df.groupby(['Segmento', cluster_column])[['Volume transacional (R$)', 'CAC (R$)_x']].mean().unstack()
+median_metrics = df.groupby(['Segmento', cluster_column])[['Volume transacional (R$)', 'CAC (R$)_x']].median().unstack()
+
+# Plotar médias
+plt.figure(figsize=(12, 8))
+mean_metrics['Volume transacional (R$)'].plot(kind='bar', ax=plt.gca())
+plt.title('Média de Volume Transacional por Cluster e Segmento')
+plt.xlabel('Segmento')
+plt.ylabel('Volume Transacional Médio (R$)')
+plt.legend(title='Cluster')
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(12, 8))
+mean_metrics['CAC (R$)_x'].plot(kind='bar', ax=plt.gca())
+plt.title('Média de CAC por Cluster e Segmento')
+plt.xlabel('Segmento')
+plt.ylabel('CAC Médio (R$)')
+plt.legend(title='Cluster')
+plt.tight_layout()
+plt.show()
+
+# Plotar medianas
+plt.figure(figsize=(12, 8))
+median_metrics['Volume transacional (R$)'].plot(kind='bar', ax=plt.gca())
+plt.title('Mediana de Volume Transacional por Cluster e Segmento')
+plt.xlabel('Segmento')
+plt.ylabel('Volume Transacional Mediano (R$)')
+plt.legend(title='Cluster')
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(12, 8))
+median_metrics['CAC (R$)_x'].plot(kind='bar', ax=plt.gca())
+plt.title('Mediana de CAC por Cluster e Segmento')
+plt.xlabel('Segmento')
+plt.ylabel('CAC Mediano (R$)')
+plt.legend(title='Cluster')
+plt.tight_layout()
+plt.show()
+
+# Box Plot da Distribuição de Volume e CAC por Cluster e Segmento
+plt.figure(figsize=(15, 8))
+sns.boxplot(data=df, x=cluster_column, y='Volume transacional (R$)', hue='Segmento')
+plt.title('Distribuição de Volume Transacional por Cluster e Segmento')
+plt.xlabel('Cluster')
+plt.ylabel('Volume Transacional (R$)')
+plt.legend(title='Segmento', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(15, 8))
+sns.boxplot(data=df, x=cluster_column, y='CAC (R$)_x', hue='Segmento')
+plt.title('Distribuição de CAC por Cluster e Segmento')
+plt.xlabel('Cluster')
+plt.ylabel('CAC (R$)_x')
+plt.legend(title='Segmento', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Box Plot da Receita Transacional por Cluster e Segmento
+plt.figure(figsize=(15, 8))
+sns.boxplot(data=df, x=cluster_column, y='Receita Transacional (R$)', hue='Segmento')
+plt.title('Distribuição de Receita Transacional por Cluster e Segmento')
+plt.xlabel('Cluster')
+plt.ylabel('Receita Transacional (R$)')
+plt.legend(title='Segmento', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
